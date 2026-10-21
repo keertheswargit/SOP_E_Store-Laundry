@@ -56,6 +56,16 @@
                         required 
                         autocomplete="new-password"
                     >
+                <div class="form-group">
+                    <label for="reg-id-card">Student Identity Card (PDF or JPG/PNG)</label>
+                    <input 
+                        type="file" 
+                        id="reg-id-card" 
+                        name="idCard" 
+                        accept=".pdf,image/jpeg,image/png,image/webp"
+                    >
+                    <small class="field-hint">Upload your college ID card for staff verification (can also be uploaded after login).</small>
+                    <div id="file-chosen-status" class="file-chosen-status hidden"></div>
                 </div>
 
                 <!-- Inline feedback containers -->

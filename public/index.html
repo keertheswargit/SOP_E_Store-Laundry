@@ -67,6 +67,29 @@
                 <p class="balance-info">Fee Credit Status: <strong style="color: #27ae60;">Active (Hostel Fee Paid)</strong></p>
             </section>
 
+            <!-- STUDENT SECTION: IDENTITY CARD VERIFICATION -->
+            <section class="card idcard-card" id="idcard-card-section">
+                <div class="card-header-flex">
+                    <h3>Student Identity Card</h3>
+                    <span id="student-idcard-badge" class="id-status-badge status-not-uploaded">Not Uploaded</span>
+                </div>
+                <div id="student-idcard-info" class="idcard-info-box">
+                    <p class="idcard-info-text">Upload your college ID card (PDF or JPG) so staff can verify and accept your laundry & store requests.</p>
+                </div>
+                
+                <form id="student-idcard-upload-form" class="idcard-upload-form" onsubmit="handleStudentIdCardUpload(event)">
+                    <div class="form-group" style="margin-bottom: 0.6rem;">
+                        <label for="student-dash-id-file" id="dash-upload-label">Select ID Card File (PDF or JPG/PNG)</label>
+                        <input type="file" id="student-dash-id-file" accept=".pdf,image/jpeg,image/png,image/webp" required>
+                    </div>
+                    <div class="idcard-form-actions">
+                        <button type="submit" id="dash-idcard-submit-btn" class="upload-btn">Upload ID Card</button>
+                        <button type="button" id="dash-view-id-btn" class="view-btn hidden" onclick="viewMyIdCard()">👁️ View Uploaded ID</button>
+                    </div>
+                    <div id="dash-idcard-msg" class="idcard-feedback-msg hidden"></div>
+                </form>
+            </section>
+
             <!-- STUDENT SECTION: LAUNDRY SERVICE -->
             <section class="card module-card" id="laundry-card-section">
                 <h2>Laundry Service</h2>
@@ -183,6 +206,7 @@
                             <tr>
                                 <th>Token</th>
                                 <th>Student</th>
+                                <th>Identity Card</th>
                                 <th>Service</th>
                                 <th>Collection / Details</th>
                                 <th>Amount</th>
@@ -190,7 +214,7 @@
                             </tr>
                         </thead>
                         <tbody id="laundry-requests-body">
-                            <tr><td colspan="6" style="text-align:center;">No pending laundry requests.</td></tr>
+                            <tr><td colspan="7" style="text-align:center;">No pending laundry requests.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -259,6 +283,7 @@
                             <tr>
                                 <th>Order Token</th>
                                 <th>Student</th>
+                                <th>Identity Card</th>
                                 <th>Items Ordered</th>
                                 <th>Total Quantity</th>
                                 <th>Total Amount</th>
@@ -266,7 +291,7 @@
                             </tr>
                         </thead>
                         <tbody id="store-orders-body">
-                            <tr><td colspan="6" style="text-align:center;">No pending store orders.</td></tr>
+                            <tr><td colspan="7" style="text-align:center;">No pending store orders.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -326,6 +351,62 @@
                 </div>
             </section>
 
+            <!-- STAFF STUDENT IDENTITY CARDS DESK -->
+            <section class="card full-width hidden" id="staff-idcards-section">
+                <div class="staff-history-header">
+                    <div>
+                        <h3>Student Identity Cards Verification Desk</h3>
+                        <p class="service-desc" style="margin-bottom: 0;">Review student identity cards (PDF / JPG) uploaded during signup or student dashboard.</p>
+                    </div>
+                    <div class="history-filter-group">
+                        <button type="button" class="filter-tab-btn active" id="id-filter-all-btn" onclick="switchIdCardFilter('all')">All</button>
+                        <button type="button" class="filter-tab-btn" id="id-filter-pending-btn" onclick="switchIdCardFilter('pending')">Pending</button>
+                        <button type="button" class="filter-tab-btn" id="id-filter-approved-btn" onclick="switchIdCardFilter('approved')">Approved</button>
+                        <button type="button" class="filter-tab-btn" id="id-filter-rejected-btn" onclick="switchIdCardFilter('rejected')">Rejected</button>
+                        <button type="button" class="filter-tab-btn" onclick="fetchStudentIdCards()">🔄 Refresh</button>
+                    </div>
+                </div>
+
+                <!-- Summary Metric Cards -->
+                <div class="staff-summary-metrics">
+                    <div class="metric-card">
+                        <span class="metric-title">Total Students</span>
+                        <span class="metric-value" id="id-metric-total">0</span>
+                    </div>
+                    <div class="metric-card">
+                        <span class="metric-title">Pending Verification</span>
+                        <span class="metric-value text-teal" id="id-metric-pending" style="color: #f59e0b !important;">0</span>
+                    </div>
+                    <div class="metric-card">
+                        <span class="metric-title">Verified & Approved</span>
+                        <span class="metric-value text-green" id="id-metric-approved">0</span>
+                    </div>
+                    <div class="metric-card">
+                        <span class="metric-title">Rejected / Missing</span>
+                        <span class="metric-value text-red" id="id-metric-rejected">0</span>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Student Roll / User</th>
+                                <th>Uploaded Document</th>
+                                <th>Upload Date</th>
+                                <th>Status</th>
+                                <th>Verified By</th>
+                                <th>Remarks / Reason</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="staff-idcards-table-body">
+                            <tr><td colspan="7" style="text-align:center;">Loading identity cards...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
             <!-- TRANSACTIONS HISTORY -->
             <section class="card full-width" id="tx-card-section">
                 <h3>Transaction History</h3>
@@ -362,11 +443,12 @@
                 <p class="modal-subtext" id="reject-modal-details"></p>
                 <div class="form-group" style="margin-top: 1rem;">
                     <label for="laundry-reject-reason-input">Reason for Rejection <span style="color:#e74c3c;">*</span></label>
-                    <textarea id="laundry-reject-reason-input" rows="3" placeholder="Enter reason for rejecting this laundry request (e.g. Torn clothes, capacity full)..."></textarea>
+                    <textarea id="laundry-reject-reason-input" rows="3" placeholder="Enter reason for rejecting this laundry request..."></textarea>
                 </div>
                 <div class="quick-reasons-group">
                     <span class="quick-reasons-label">Quick Suggestions:</span>
                     <div class="reason-chips">
+                        <button type="button" class="chip-btn" onclick="setLaundryRejectReason('No valid identity card')">No valid identity card</button>
                         <button type="button" class="chip-btn" onclick="setLaundryRejectReason('Torn / damaged clothes')">Torn / damaged clothes</button>
                         <button type="button" class="chip-btn" onclick="setLaundryRejectReason('Laundry capacity full for today')">Capacity full</button>
                         <button type="button" class="chip-btn" onclick="setLaundryRejectReason('Cloth count does not match')">Cloth count mismatch</button>
@@ -399,6 +481,7 @@
                 <div class="quick-reasons-group">
                     <span class="quick-reasons-label">Quick Suggestions:</span>
                     <div class="reason-chips">
+                        <button type="button" class="chip-btn" onclick="setStoreRejectReason('No valid identity card')">No valid identity card</button>
                         <button type="button" class="chip-btn" onclick="setStoreRejectReason('Out of Stock')">Out of Stock</button>
                         <button type="button" class="chip-btn" onclick="setStoreRejectReason('Store counter closing now')">Store closing</button>
                         <button type="button" class="chip-btn" onclick="setStoreRejectReason('Partial items unavailable')">Partial items unavailable</button>
@@ -408,6 +491,62 @@
             <div class="modal-footer">
                 <button type="button" class="modal-btn-cancel" onclick="closeStoreRejectModal()">Cancel</button>
                 <button type="button" class="modal-btn-reject" onclick="confirmStoreReject()">Confirm Rejection</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- IDENTITY CARD PREVIEW & VERIFICATION MODAL -->
+    <div id="id-card-view-modal" class="modal-overlay hidden">
+        <div class="modal-box id-card-modal-box">
+            <div class="modal-header">
+                <div>
+                    <h3 id="id-modal-title">Student Identity Card Verification</h3>
+                    <p class="modal-subtext" id="id-modal-student-info" style="margin-top: 0.2rem;"></p>
+                </div>
+                <button type="button" class="close-modal-btn" onclick="closeIdCardModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Status & rejection banner inside modal -->
+                <div id="id-modal-status-banner" class="status-alert-box hidden" style="margin-bottom: 1rem;"></div>
+
+                <!-- Document Display Container -->
+                <div id="id-modal-doc-container" class="id-doc-preview-wrapper">
+                    <!-- Image or iframe inserted dynamically -->
+                </div>
+
+                <div class="id-modal-actions-bar" style="margin-top: 0.75rem; display: flex; justify-content: space-between; align-items: center;">
+                    <span id="id-modal-doc-format-label" style="font-size: 0.82rem; color: #64748b; font-weight: 600;"></span>
+                    <a id="id-modal-download-link" href="#" target="_blank" class="download-link-btn" download>↗️ Open in New Window</a>
+                </div>
+
+                <!-- Staff Verification Controls (visible for staff only) -->
+                <div id="id-modal-staff-controls" class="staff-id-controls-box hidden">
+                    <h4 style="font-size: 1rem; color: #1b3a4b; margin-bottom: 0.2rem;">Staff Identity Verification</h4>
+                    <p class="service-desc" style="margin-bottom: 0.8rem;">Inspect identity card person, roll number, and validity before approving requests.</p>
+                    
+                    <div class="form-group" style="margin-top: 0.5rem; margin-bottom: 0.5rem;">
+                        <label for="id-modal-reject-reason" style="font-size: 0.82rem;">Reason if rejecting (defaults to "No valid identity card"):</label>
+                        <input type="text" id="id-modal-reject-reason" placeholder="No valid identity card" value="No valid identity card">
+                    </div>
+
+                    <div class="quick-reasons-group" style="margin-bottom: 1rem;">
+                        <span class="quick-reasons-label">Quick Reasons:</span>
+                        <div class="reason-chips">
+                            <button type="button" class="chip-btn" onclick="setIdCardRejectReason('No valid identity card')">No valid identity card</button>
+                            <button type="button" class="chip-btn" onclick="setIdCardRejectReason('Blurry / Unreadable photo or roll number')">Blurry / unreadable</button>
+                            <button type="button" class="chip-btn" onclick="setIdCardRejectReason('Expired / invalid semester ID')">Expired ID</button>
+                            <button type="button" class="chip-btn" onclick="setIdCardRejectReason('Identity card does not match student account')">Account mismatch</button>
+                        </div>
+                    </div>
+
+                    <div class="id-verify-btn-group" style="display: flex; gap: 0.75rem;">
+                        <button type="button" class="btn-approve" id="id-modal-approve-btn" onclick="approveCurrentIdCard()" style="flex: 1; padding: 0.65rem;">✓ Approve ID Card</button>
+                        <button type="button" class="btn-reject" id="id-modal-reject-btn" onclick="rejectCurrentIdCard()" style="flex: 1; padding: 0.65rem;">❌ Reject ID Card</button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="modal-btn-cancel" onclick="closeIdCardModal()">Close</button>
             </div>
         </div>
     </div>

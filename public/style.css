@@ -964,3 +964,216 @@ button:disabled, .action-btn:disabled {
     background: #fee2e2;
     color: #991b1b;
 }
+
+/* STUDENT IDENTITY CARD STYLES */
+.idcard-card {
+    border-left: 4px solid #1b3a4b;
+}
+
+.card-header-flex {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.id-status-badge {
+    padding: 0.25rem 0.65rem;
+    border-radius: 14px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.status-not-uploaded {
+    background: #e2e8f0;
+    color: #475569;
+}
+
+.status-pending {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.status-approved {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.status-rejected {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.idcard-info-box {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 0.75rem;
+    margin-bottom: 0.85rem;
+}
+
+.idcard-info-text {
+    font-size: 0.88rem;
+    color: #475569;
+    line-height: 1.4;
+}
+
+.idcard-upload-form {
+    margin-top: 0.5rem;
+}
+
+.idcard-form-actions {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+    margin-top: 0.6rem;
+}
+
+.upload-btn {
+    padding: 0.55rem 1.1rem;
+    background: #1b3a4b;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.upload-btn:hover {
+    background: #2d6a4f;
+}
+
+.view-btn {
+    padding: 0.55rem 1rem;
+    background: #f1f5f9;
+    color: #1b3a4b;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.view-btn:hover {
+    background: #e2e8f0;
+    border-color: #94a3b8;
+}
+
+.idcard-feedback-msg {
+    margin-top: 0.6rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0.4rem 0.6rem;
+    border-radius: 4px;
+}
+
+.field-hint {
+    display: block;
+    font-size: 0.78rem;
+    color: #64748b;
+    margin-top: 0.25rem;
+}
+
+.file-chosen-status {
+    margin-top: 0.4rem;
+    font-size: 0.82rem;
+    color: #166534;
+    background: #f0fdf4;
+    padding: 0.35rem 0.6rem;
+    border-radius: 4px;
+    border: 1px solid #bbf7d0;
+}
+
+/* ID CARD MODAL & PREVIEW */
+.id-card-modal-box {
+    max-width: 750px !important;
+    width: 90% !important;
+}
+
+.id-doc-preview-wrapper {
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 0.5rem;
+    min-height: 250px;
+    max-height: 520px;
+    overflow: auto;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.id-doc-preview-img {
+    max-width: 100%;
+    max-height: 480px;
+    object-fit: contain;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.id-doc-preview-iframe {
+    width: 100%;
+    height: 480px;
+    border: none;
+    border-radius: 4px;
+}
+
+.download-link-btn {
+    display: inline-block;
+    color: #2d6a4f;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-decoration: none;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    transition: all 0.15s;
+}
+
+.download-link-btn:hover {
+    background: #f1f5f9;
+    text-decoration: underline;
+}
+
+.staff-id-controls-box {
+    margin-top: 1.25rem;
+    padding: 1rem;
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+}
+
+.btn-view-id {
+    padding: 0.3rem 0.65rem;
+    background: #1b3a4b;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.btn-view-id:hover {
+    background: #2d6a4f;
+}
+
+.id-badge-inline {
+    display: inline-block;
+    padding: 0.15rem 0.45rem;
+    border-radius: 10px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    margin-left: 0.35rem;
+    vertical-align: middle;
+}

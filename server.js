@@ -2,6 +2,9 @@ const express = require("express");
 const { Pool } = require("pg");
 const bcrypt = require("bcrypt");
 const cors = require("cors");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
 require("dotenv").config();
 
 const app = express();
@@ -10,6 +13,42 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 app.use(express.static("public"));
+
+// Ensure uploads/id_cards directory exists and serve statically
+const uploadDir = path.join(__dirname, "uploads", "id_cards");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+// Configure Multer Storage for Student Identity Cards
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const cleanName = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, "_");
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e6);
+    cb(null, `${cleanName}-${uniqueSuffix}${ext}`);
+  }
+});
+
+const fileFilter = (req, file, cb) => {
+  const allowedExts = [".pdf", ".jpg", ".jpeg", ".png", ".webp"];
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (allowedExts.includes(ext)) {
+    cb(null, true);
+  } else {
+    cb(new Error("Invalid file format. Please upload PDF, JPG, PNG, or WEBP."));
+  }
+};
+
+const upload = multer({
+  storage: storage,
+  fileFilter: fileFilter,
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB file limit
+});
 
 const pool = new Pool({
   host: process.env.DB_HOST || "localhost",
@@ -24,6 +63,23 @@ pool.query("SELECT NOW()", (err) => {
     console.error("Database connection failure:", err.stack);
   } else {
     console.log("PostgreSQL connected successfully!");
+    // Ensure identity card columns exist in users table
+    pool.query(`
+      ALTER TABLE users 
+      ADD COLUMN IF NOT EXISTS id_card_url TEXT,
+      ADD COLUMN IF NOT EXISTS id_card_filename TEXT,
+      ADD COLUMN IF NOT EXISTS id_card_status VARCHAR(20) DEFAULT 'NOT_UPLOADED',
+      ADD COLUMN IF NOT EXISTS id_card_rejection_reason TEXT,
+      ADD COLUMN IF NOT EXISTS id_card_uploaded_at TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS id_card_verified_at TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS id_card_verified_by VARCHAR(100);
+    `, (mErr) => {
+      if (mErr) {
+        console.error("Schema check notice:", mErr.message);
+      } else {
+        console.log("Database schema verified (id_card columns ready).");
+      }
+    });
   }
 });
 
@@ -50,8 +106,17 @@ function validateStrongPassword(password) {
   return { valid: true };
 }
 
-// Student Registration API
-app.post("/api/register", async (req, res) => {
+// Student Registration API (Supports multipart form data with optional identity card)
+app.post("/api/register", (req, res, next) => {
+  upload.single("idCard")(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      return res.status(400).json({ success: false, message: `File upload error: ${err.message}` });
+    } else if (err) {
+      return res.status(400).json({ success: false, message: err.message });
+    }
+    next();
+  });
+}, async (req, res) => {
   const { username, password, confirmPassword } = req.body;
 
   if (!username || typeof username !== "string" || !username.trim()) {
@@ -86,15 +151,20 @@ app.post("/api/register", async (req, res) => {
     // Hash password with bcrypt (salt rounds = 10)
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    const idCardUrl = req.file ? `/uploads/id_cards/${req.file.filename}` : null;
+    const idCardFilename = req.file ? req.file.originalname : null;
+    const idCardStatus = req.file ? "PENDING" : "NOT_UPLOADED";
+    const idCardUploadedAt = req.file ? new Date() : null;
+
     await client.query("BEGIN");
     inTransaction = true;
 
-    // Insert student with initial fee credit balance of 1000.00
+    // Insert student with initial fee credit balance of 1000.00 and optional ID card
     const insertUserRes = await client.query(
-      `INSERT INTO users (username, password_hash, role, balance)
-       VALUES ($1, $2, 'student', 1000.00)
+      `INSERT INTO users (username, password_hash, role, balance, id_card_url, id_card_filename, id_card_status, id_card_uploaded_at)
+       VALUES ($1, $2, 'student', 1000.00, $3, $4, $5, $6)
        RETURNING id`,
-      [trimmedUsername, hashedPassword]
+      [trimmedUsername, hashedPassword, idCardUrl, idCardFilename, idCardStatus, idCardUploadedAt]
     );
 
     const newUserId = insertUserRes.rows[0].id;
@@ -109,7 +179,12 @@ app.post("/api/register", async (req, res) => {
     await client.query("COMMIT");
     inTransaction = false;
 
-    return res.json({ success: true, message: "Registration successful!" });
+    return res.json({
+      success: true,
+      message: req.file 
+        ? "Registration successful! Identity card submitted for staff verification." 
+        : "Registration successful!"
+    });
   } catch (err) {
     if (inTransaction) {
       await client.query("ROLLBACK");
@@ -118,6 +193,60 @@ app.post("/api/register", async (req, res) => {
     return res.status(500).json({ success: false, message: "Internal server error" });
   } finally {
     client.release();
+  }
+});
+
+// Student Upload / Re-upload Identity Card API (from student dashboard)
+app.post("/api/student/upload-id-card", (req, res, next) => {
+  upload.single("idCard")(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      return res.status(400).json({ success: false, message: `Upload error: ${err.message}` });
+    } else if (err) {
+      return res.status(400).json({ success: false, message: err.message });
+    }
+    next();
+  });
+}, async (req, res) => {
+  try {
+    const { username } = req.body;
+    if (!username || !username.trim()) {
+      return res.status(400).json({ success: false, message: "Student username is required." });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: "Please choose an identity card file (PDF or JPG/PNG)." });
+    }
+
+    const trimmedUsername = username.trim();
+    const idCardUrl = `/uploads/id_cards/${req.file.filename}`;
+    const idCardFilename = req.file.originalname;
+
+    const result = await pool.query(
+      `UPDATE users 
+       SET id_card_url = $1,
+           id_card_filename = $2,
+           id_card_status = 'PENDING',
+           id_card_uploaded_at = NOW(),
+           id_card_rejection_reason = NULL,
+           id_card_verified_at = NULL,
+           id_card_verified_by = NULL
+       WHERE LOWER(username) = LOWER($3) AND role = 'student'
+       RETURNING id, username, id_card_url, id_card_filename, id_card_status, id_card_uploaded_at`,
+      [idCardUrl, idCardFilename, trimmedUsername]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: "Student account not found." });
+    }
+
+    res.json({
+      success: true,
+      message: "Identity card uploaded successfully! Awaiting staff verification.",
+      idCard: result.rows[0]
+    });
+  } catch (err) {
+    console.error("ID card upload error:", err);
+    res.status(500).json({ success: false, message: "Failed to upload identity card: " + err.message });
   }
 });
 
@@ -165,7 +294,11 @@ app.get("/api/student/:username", async (req, res) => {
   const { username } = req.params;
   try {
     const result = await pool.query(
-      "SELECT id, username, role, balance FROM users WHERE username = $1 AND role = 'student'",
+      `SELECT id, username, role, balance, id_card_url, id_card_filename, 
+              COALESCE(id_card_status, 'NOT_UPLOADED') AS id_card_status, 
+              id_card_rejection_reason, id_card_uploaded_at, id_card_verified_at, id_card_verified_by 
+       FROM users 
+       WHERE LOWER(username) = LOWER($1) AND role = 'student'`,
       [username]
     );
     if (result.rows.length === 0) {
@@ -205,12 +338,32 @@ app.post("/api/laundry/request", async (req, res) => {
   const numAmount = parseFloat(amount);
 
   try {
-    const userRes = await pool.query("SELECT id, balance FROM users WHERE username = $1", [username]);
+    const userRes = await pool.query(
+      `SELECT id, balance, id_card_url, COALESCE(id_card_status, 'NOT_UPLOADED') AS id_card_status, id_card_rejection_reason 
+       FROM users 
+       WHERE LOWER(username) = LOWER($1)`,
+      [username]
+    );
     if (userRes.rows.length === 0) {
       return res.status(404).json({ success: false, message: "Student not found" });
     }
 
     const user = userRes.rows[0];
+
+    // Identity Card Check: Student must upload an identity card so staff can verify and accept
+    if (!user.id_card_url || user.id_card_status === 'NOT_UPLOADED') {
+      return res.status(400).json({
+        success: false,
+        message: "Identity card not registered. Please upload your student identity card (PDF or JPG) in your dashboard first so staff can verify and accept your laundry request."
+      });
+    }
+
+    if (user.id_card_status === 'REJECTED') {
+      return res.status(400).json({
+        success: false,
+        message: `Your identity card was rejected (${user.id_card_rejection_reason || 'No valid identity card'}). Please re-upload a valid ID card in your dashboard before placing a request.`
+      });
+    }
 
     // Concurrency check: Cannot order laundry if already laundry takes place (PENDING request)
     const activeReq = await pool.query(
@@ -255,11 +408,19 @@ app.post("/api/laundry/request", async (req, res) => {
   }
 });
 
-// Laundry Staff: Fetch pending laundry requests
+// Laundry Staff: Fetch pending laundry requests with student identity card details
 app.get("/api/staff/laundry-requests", async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT * FROM laundry_requests WHERE status = 'PENDING' ORDER BY created_at DESC"
+      `SELECT lr.*, 
+              u.id_card_url, u.id_card_filename, 
+              COALESCE(u.id_card_status, 'NOT_UPLOADED') AS id_card_status, 
+              u.id_card_rejection_reason, u.id_card_uploaded_at,
+              u.id_card_verified_at, u.id_card_verified_by
+       FROM laundry_requests lr
+       LEFT JOIN users u ON lr.user_id = u.id
+       WHERE lr.status = 'PENDING'
+       ORDER BY lr.created_at DESC`
     );
     res.json({ success: true, requests: result.rows });
   } catch (err) {
@@ -402,12 +563,32 @@ app.post("/api/store/order", async (req, res) => {
   const numAmount = parseFloat(total_amount);
 
   try {
-    const userRes = await pool.query("SELECT id, balance FROM users WHERE username = $1", [username]);
+    const userRes = await pool.query(
+      `SELECT id, balance, id_card_url, COALESCE(id_card_status, 'NOT_UPLOADED') AS id_card_status, id_card_rejection_reason 
+       FROM users 
+       WHERE LOWER(username) = LOWER($1)`,
+      [username]
+    );
     if (userRes.rows.length === 0) {
       return res.status(404).json({ success: false, message: "Student not found" });
     }
 
     const user = userRes.rows[0];
+
+    // Identity Card Check: Student must upload an identity card so staff can verify and accept
+    if (!user.id_card_url || user.id_card_status === 'NOT_UPLOADED') {
+      return res.status(400).json({
+        success: false,
+        message: "Identity card not registered. Please upload your student identity card (PDF or JPG) in your dashboard first so staff can verify and accept your store order."
+      });
+    }
+
+    if (user.id_card_status === 'REJECTED') {
+      return res.status(400).json({
+        success: false,
+        message: `Your identity card was rejected (${user.id_card_rejection_reason || 'No valid identity card'}). Please re-upload a valid ID card in your dashboard before placing an order.`
+      });
+    }
 
     // Concurrency check: after confirming order only we can place another order
     const activeOrder = await pool.query(
@@ -444,11 +625,19 @@ app.post("/api/store/order", async (req, res) => {
   }
 });
 
-// Store Staff: Fetch pending orders
+// Store Staff: Fetch pending orders with student identity card details
 app.get("/api/staff/store-orders", async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT * FROM store_orders WHERE status = 'PENDING' ORDER BY created_at DESC"
+      `SELECT so.*, 
+              u.id_card_url, u.id_card_filename, 
+              COALESCE(u.id_card_status, 'NOT_UPLOADED') AS id_card_status, 
+              u.id_card_rejection_reason, u.id_card_uploaded_at,
+              u.id_card_verified_at, u.id_card_verified_by
+       FROM store_orders so
+       LEFT JOIN users u ON so.user_id = u.id
+       WHERE so.status = 'PENDING'
+       ORDER BY so.created_at DESC`
     );
     res.json({ success: true, orders: result.rows });
   } catch (err) {
@@ -610,6 +799,103 @@ app.get("/api/student/:username/status", async (req, res) => {
   } catch (err) {
     console.error("Student status fetch error:", err);
     res.status(500).json({ success: false, message: "Failed to fetch student status" });
+  }
+});
+
+// ----------------- STAFF IDENTITY CARD VERIFICATION APIS -----------------
+
+// Fetch all registered students and their ID card verification status
+app.get("/api/staff/student-id-cards", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, username, id_card_url, id_card_filename, 
+              COALESCE(id_card_status, 'NOT_UPLOADED') AS id_card_status, 
+              id_card_rejection_reason, id_card_uploaded_at, 
+              id_card_verified_at, id_card_verified_by, created_at
+       FROM users
+       WHERE role = 'student'
+       ORDER BY 
+         CASE 
+           WHEN id_card_status = 'PENDING' THEN 1
+           WHEN id_card_status = 'NOT_UPLOADED' THEN 2
+           WHEN id_card_status = 'REJECTED' THEN 3
+           ELSE 4
+         END,
+         id_card_uploaded_at DESC NULLS LAST,
+         created_at DESC`
+    );
+    res.json({ success: true, students: result.rows });
+  } catch (err) {
+    console.error("Fetch student ID cards error:", err);
+    res.status(500).json({ success: false, message: "Could not fetch student ID cards" });
+  }
+});
+
+// Staff approves student's uploaded ID card
+app.post("/api/staff/id-card/approve", async (req, res) => {
+  const { username, staffUsername } = req.body;
+  if (!username) {
+    return res.status(400).json({ success: false, message: "Student username is required." });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE users 
+       SET id_card_status = 'APPROVED',
+           id_card_verified_at = NOW(),
+           id_card_verified_by = $1,
+           id_card_rejection_reason = NULL
+       WHERE LOWER(username) = LOWER($2) AND role = 'student'
+       RETURNING id, username, id_card_status, id_card_verified_by`,
+      [staffUsername || "staff", username]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: "Student account not found." });
+    }
+
+    res.json({
+      success: true,
+      message: `Identity card for ${result.rows[0].username} has been verified and approved.`
+    });
+  } catch (err) {
+    console.error("ID Card approval error:", err);
+    res.status(500).json({ success: false, message: "Error approving identity card: " + err.message });
+  }
+});
+
+// Staff rejects student's uploaded ID card with reason (default "No valid identity card")
+app.post("/api/staff/id-card/reject", async (req, res) => {
+  const { username, staffUsername, reason } = req.body;
+  const rejectReason = (reason && reason.trim()) ? reason.trim() : "No valid identity card";
+
+  if (!username) {
+    return res.status(400).json({ success: false, message: "Student username is required." });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE users 
+       SET id_card_status = 'REJECTED',
+           id_card_verified_at = NOW(),
+           id_card_verified_by = $1,
+           id_card_rejection_reason = $2
+       WHERE LOWER(username) = LOWER($3) AND role = 'student'
+       RETURNING id, username, id_card_status, id_card_rejection_reason`,
+      [staffUsername || "staff", rejectReason, username]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: "Student account not found." });
+    }
+
+    res.json({
+      success: true,
+      message: `Identity card for ${result.rows[0].username} has been rejected. Reason: ${rejectReason}`
+    });
+  } catch (err) {
+    console.error("ID Card rejection error:", err);
+    res.status(500).json({ success: false, message: "Error rejecting identity card: " + err.message });
   }
 });
 

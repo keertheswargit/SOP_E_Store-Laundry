@@ -12,6 +12,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const ruleLower = document.getElementById("rule-lower");
   const ruleNum = document.getElementById("rule-num");
   const ruleSpecial = document.getElementById("rule-special");
+  const idCardInput = document.getElementById("reg-id-card");
+  const fileStatus = document.getElementById("file-chosen-status");
 
   function evaluatePassword(pwd) {
     return {
@@ -46,6 +48,20 @@ document.addEventListener("DOMContentLoaded", () => {
     updateRule(ruleSpecial, checks.special, "At least 1 special character (!@#$%^&*...)");
   });
 
+  // Identity card file chosen preview
+  if (idCardInput && fileStatus) {
+    idCardInput.addEventListener("change", () => {
+      if (idCardInput.files && idCardInput.files[0]) {
+        const file = idCardInput.files[0];
+        fileStatus.className = "file-chosen-status";
+        fileStatus.innerHTML = `📄 <strong>Selected ID:</strong> ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+        fileStatus.classList.remove("hidden");
+      } else {
+        fileStatus.classList.add("hidden");
+      }
+    });
+  }
+
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     errorElement.textContent = "";
@@ -78,16 +94,18 @@ document.addEventListener("DOMContentLoaded", () => {
     submitBtn.textContent = "Registering...";
 
     try {
+      const formData = new FormData();
+      formData.append("username", username);
+      formData.append("password", password);
+      formData.append("confirmPassword", confirmPassword);
+
+      if (idCardInput && idCardInput.files && idCardInput.files[0]) {
+        formData.append("idCard", idCardInput.files[0]);
+      }
+
       const response = await fetch("/api/register", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          username,
-          password,
-          confirmPassword,
-        }),
+        body: formData,
       });
 
       const data = await response.json();

@@ -43,6 +43,12 @@ let hasActiveStore = false;
 let pendingRejectLaundryId = null;
 let pendingRejectStoreId = null;
 
+// Student Identity Card context
+let currentStudentData = null;
+let activeModalStudent = null;
+let currentIdFilter = "all";
+let allStudentIdCards = [];
+
 document.addEventListener("DOMContentLoaded", () => {
   const currentUser = JSON.parse(sessionStorage.getItem("smart_hostel_user"));
   if (currentUser) {
@@ -60,6 +66,8 @@ function selectRole(role) {
 
 function showLogin() {
   sessionStorage.removeItem("smart_hostel_user");
+  currentStudentData = null;
+  activeModalStudent = null;
 
   document.getElementById("username").value = "";
   document.getElementById("password").value = "";
@@ -74,6 +82,13 @@ function showLogin() {
   document.getElementById("store-order-display").classList.add("hidden");
   document.getElementById("laundry-active-status-banner").classList.add("hidden");
   document.getElementById("store-active-status-banner").classList.add("hidden");
+
+  const idForm = document.getElementById("student-idcard-upload-form");
+  if (idForm) idForm.reset();
+  const fileInput = document.getElementById("student-dash-id-file");
+  if (fileInput) fileInput.value = "";
+  const idMsg = document.getElementById("dash-idcard-msg");
+  if (idMsg) idMsg.classList.add("hidden");
 
   selectRole("student");
   document.getElementById("dashboard-container").classList.add("hidden");
@@ -128,50 +143,61 @@ function showDashboard(user) {
   document.getElementById("display-role").textContent = user.role.toUpperCase();
 
   const walletSec = document.getElementById("wallet-card-section");
+  const idcardSec = document.getElementById("idcard-card-section");
   const laundrySec = document.getElementById("laundry-card-section");
   const storeSec = document.getElementById("store-card-section");
   const txSec = document.getElementById("tx-card-section");
   const laundryStaffSec = document.getElementById("laundry-staff-section");
   const storeStaffSec = document.getElementById("store-staff-section");
+  const staffIdCardsSec = document.getElementById("staff-idcards-section");
 
   // Hide all sections first
-  walletSec.classList.add("hidden");
-  laundrySec.classList.add("hidden");
-  storeSec.classList.add("hidden");
-  txSec.classList.add("hidden");
-  laundryStaffSec.classList.add("hidden");
-  storeStaffSec.classList.add("hidden");
+  if (walletSec) walletSec.classList.add("hidden");
+  if (idcardSec) idcardSec.classList.add("hidden");
+  if (laundrySec) laundrySec.classList.add("hidden");
+  if (storeSec) storeSec.classList.add("hidden");
+  if (txSec) txSec.classList.add("hidden");
+  if (laundryStaffSec) laundryStaffSec.classList.add("hidden");
+  if (storeStaffSec) storeStaffSec.classList.add("hidden");
+  if (staffIdCardsSec) staffIdCardsSec.classList.add("hidden");
 
   if (user.role === "laundry_staff") {
     const staffLabel = document.getElementById("laundry-staff-username-label");
     if (staffLabel) staffLabel.textContent = user.username;
     laundryStaffSec.classList.remove("hidden");
+    if (staffIdCardsSec) staffIdCardsSec.classList.remove("hidden");
     fetchLaundryRequests();
     fetchLaundryHistory("today");
+    fetchStudentIdCards();
   } else if (user.role === "store_staff") {
     const storeLabel = document.getElementById("store-staff-username-label");
     if (storeLabel) storeLabel.textContent = user.username;
     storeStaffSec.classList.remove("hidden");
+    if (staffIdCardsSec) staffIdCardsSec.classList.remove("hidden");
     fetchStoreOrders();
     fetchStoreHistory("today");
+    fetchStudentIdCards();
   } else if (user.role === "staff") {
-    // General staff sees both
+    // General staff sees both desks + ID card desk
     const staffLabel = document.getElementById("laundry-staff-username-label");
     if (staffLabel) staffLabel.textContent = user.username;
     const storeLabel = document.getElementById("store-staff-username-label");
     if (storeLabel) storeLabel.textContent = user.username;
     laundryStaffSec.classList.remove("hidden");
     storeStaffSec.classList.remove("hidden");
+    if (staffIdCardsSec) staffIdCardsSec.classList.remove("hidden");
     fetchLaundryRequests();
     fetchLaundryHistory("today");
     fetchStoreOrders();
     fetchStoreHistory("today");
+    fetchStudentIdCards();
   } else {
     // Student View
-    walletSec.classList.remove("hidden");
-    laundrySec.classList.remove("hidden");
-    storeSec.classList.remove("hidden");
-    txSec.classList.remove("hidden");
+    if (walletSec) walletSec.classList.remove("hidden");
+    if (idcardSec) idcardSec.classList.remove("hidden");
+    if (laundrySec) laundrySec.classList.remove("hidden");
+    if (storeSec) storeSec.classList.remove("hidden");
+    if (txSec) txSec.classList.remove("hidden");
 
     initDressCollection();
     initStoreCatalog();
@@ -182,17 +208,153 @@ function showDashboard(user) {
   }
 }
 
-// Student Data
+// Student Data & ID Card Profile
 async function fetchStudentData(username) {
   try {
     const res = await fetch(`/api/student/${username}`);
     const data = await res.json();
     if (data.success) {
+      currentStudentData = data.user;
       document.getElementById("wallet-balance").textContent = parseFloat(data.user.balance).toFixed(2);
+      renderStudentIdCardCard(data.user);
     }
   } catch (err) {
     console.error("Balance fetch error:", err);
   }
+}
+
+function renderStudentIdCardCard(user) {
+  const badgeEl = document.getElementById("student-idcard-badge");
+  const infoEl = document.getElementById("student-idcard-info");
+  const viewBtn = document.getElementById("dash-view-id-btn");
+  const submitBtn = document.getElementById("dash-idcard-submit-btn");
+  const labelEl = document.getElementById("dash-upload-label");
+
+  if (!badgeEl || !infoEl) return;
+
+  const status = user.id_card_status || "NOT_UPLOADED";
+  badgeEl.className = "id-status-badge";
+
+  if (status === "APPROVED") {
+    badgeEl.classList.add("status-approved");
+    badgeEl.textContent = "✓ VERIFIED & APPROVED";
+    infoEl.innerHTML = `
+      <p class="idcard-info-text">
+        <strong style="color: #27ae60;">Status: Approved</strong><br>
+        Your identity card (<em>${user.id_card_filename || 'Identity Card'}</em>) has been verified by staff (${user.id_card_verified_by || 'Staff Desk'}).
+        Your requests will be approved by laundry and restore card counters!
+      </p>
+    `;
+    if (viewBtn) viewBtn.classList.remove("hidden");
+    if (submitBtn) submitBtn.textContent = "Re-upload / Update ID Card";
+    if (labelEl) labelEl.textContent = "Upload Replacement ID Card (Optional)";
+  } else if (status === "PENDING") {
+    badgeEl.classList.add("status-pending");
+    badgeEl.textContent = "⏳ PENDING VERIFICATION";
+    infoEl.innerHTML = `
+      <p class="idcard-info-text">
+        <strong style="color: #d97706;">Status: Submitted & Pending Staff Review</strong><br>
+        Document: <em>${user.id_card_filename || 'Uploaded Document'}</em><br>
+        Uploaded on: ${user.id_card_uploaded_at ? new Date(user.id_card_uploaded_at).toLocaleString() : 'Recently'}<br>
+        Staff will inspect your identity card before confirming laundry and store orders.
+      </p>
+    `;
+    if (viewBtn) viewBtn.classList.remove("hidden");
+    if (submitBtn) submitBtn.textContent = "Change / Re-upload ID Card";
+    if (labelEl) labelEl.textContent = "Re-upload Identity Card (if needed)";
+  } else if (status === "REJECTED") {
+    badgeEl.classList.add("status-rejected");
+    badgeEl.textContent = "❌ REJECTED";
+    infoEl.innerHTML = `
+      <p class="idcard-info-text">
+        <strong style="color: #dc2626;">Status: Rejected by Staff</strong><br>
+        Reason: <strong style="color:#b91c1c;">${user.id_card_rejection_reason || 'No valid identity card'}</strong><br>
+        Please upload a clear, valid college identity card (JPG or PDF) below so staff can approve your requests.
+      </p>
+    `;
+    if (viewBtn) viewBtn.classList.remove("hidden");
+    if (submitBtn) submitBtn.textContent = "Upload New ID Card";
+    if (labelEl) labelEl.textContent = "Select Valid Identity Card to Re-upload";
+  } else {
+    // NOT_UPLOADED
+    badgeEl.classList.add("status-not-uploaded");
+    badgeEl.textContent = "NOT REGISTERED";
+    infoEl.innerHTML = `
+      <p class="idcard-info-text">
+        <strong style="color: #64748b;">Notice:</strong> Please upload your student identity card (PDF, JPG, or PNG).
+        Staff requires a registered ID card to accept your laundry and hostel store requests.
+      </p>
+    `;
+    if (viewBtn) viewBtn.classList.add("hidden");
+    if (submitBtn) submitBtn.textContent = "Upload ID Card";
+    if (labelEl) labelEl.textContent = "Select ID Card File (PDF or JPG/PNG)";
+  }
+}
+
+async function handleStudentIdCardUpload(event) {
+  event.preventDefault();
+  const user = JSON.parse(sessionStorage.getItem("smart_hostel_user"));
+  const fileInput = document.getElementById("student-dash-id-file");
+  const msgEl = document.getElementById("dash-idcard-msg");
+  const submitBtn = document.getElementById("dash-idcard-submit-btn");
+
+  if (!fileInput || !fileInput.files || !fileInput.files[0]) {
+    alert("Please select an ID card file to upload.");
+    return;
+  }
+
+  const file = fileInput.files[0];
+  const formData = new FormData();
+  formData.append("username", user.username);
+  formData.append("idCard", file);
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Uploading...";
+  msgEl.className = "idcard-feedback-msg";
+  msgEl.textContent = "Uploading your identity card...";
+  msgEl.classList.remove("hidden");
+
+  try {
+    const res = await fetch("/api/student/upload-id-card", {
+      method: "POST",
+      body: formData,
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      msgEl.style.color = "#166534";
+      msgEl.style.background = "#f0fdf4";
+      msgEl.textContent = "✓ Identity card uploaded successfully! Awaiting staff verification.";
+      fileInput.value = "";
+      fetchStudentData(user.username);
+    } else {
+      msgEl.style.color = "#991b1b";
+      msgEl.style.background = "#fee2e2";
+      msgEl.textContent = "Upload failed: " + data.message;
+    }
+  } catch (err) {
+    console.error("ID upload error:", err);
+    msgEl.style.color = "#991b1b";
+    msgEl.style.background = "#fee2e2";
+    msgEl.textContent = "Network error while uploading ID card.";
+  } finally {
+    submitBtn.disabled = false;
+  }
+}
+
+function viewMyIdCard() {
+  if (!currentStudentData || !currentStudentData.id_card_url) {
+    alert("No identity card uploaded yet.");
+    return;
+  }
+  openIdCardModal(
+    currentStudentData.username,
+    currentStudentData.id_card_url,
+    currentStudentData.id_card_filename || "Identity Card",
+    currentStudentData.id_card_status || "PENDING",
+    encodeURIComponent(currentStudentData.id_card_rejection_reason || ""),
+    currentStudentData.id_card_uploaded_at || ""
+  );
 }
 
 async function fetchTransactionHistory(username) {
@@ -694,10 +856,30 @@ async function fetchLaundryRequests() {
         const details = req.service_type === "Ironing" 
           ? `${req.quantity} pcs (${req.cloth_type})` 
           : `${req.weight_kg} kg`;
+
+        const idStatus = req.id_card_status || 'NOT_UPLOADED';
+        let idBadgeClass = 'status-not-uploaded';
+        let idBadgeText = 'No ID';
+        if (idStatus === 'APPROVED') { idBadgeClass = 'status-approved'; idBadgeText = 'Approved'; }
+        else if (idStatus === 'PENDING') { idBadgeClass = 'status-pending'; idBadgeText = 'Pending'; }
+        else if (idStatus === 'REJECTED') { idBadgeClass = 'status-rejected'; idBadgeText = 'Rejected'; }
+
+        let idCell = '';
+        if (req.id_card_url) {
+          idCell = `
+            <button type="button" class="btn-view-id" onclick="openIdCardModal('${req.username}', '${req.id_card_url}', '${req.id_card_filename || 'ID Card'}', '${idStatus}', '${encodeURIComponent(req.id_card_rejection_reason || '')}', '${req.id_card_uploaded_at || ''}')">
+              📄 View ID <span class="id-badge-inline ${idBadgeClass}">${idBadgeText}</span>
+            </button>
+          `;
+        } else {
+          idCell = `<span class="id-status-badge status-not-uploaded" style="font-size:0.75rem;">⚠️ No ID</span>`;
+        }
+
         const row = document.createElement("tr");
         row.innerHTML = `
           <td><strong>${req.token_number}</strong></td>
           <td>${req.username}</td>
+          <td>${idCell}</td>
           <td>${req.service_type}</td>
           <td>${details}</td>
           <td>₹${parseFloat(req.amount).toFixed(2)}</td>
@@ -709,7 +891,7 @@ async function fetchLaundryRequests() {
         tbody.appendChild(row);
       });
     } else {
-      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;">No pending laundry requests.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;">No pending laundry requests.</td></tr>`;
     }
   } catch (err) {
     console.error("Staff laundry error:", err);
@@ -798,10 +980,29 @@ async function fetchStoreOrders() {
 
     if (data.success && data.orders.length > 0) {
       data.orders.forEach((order) => {
+        const idStatus = order.id_card_status || 'NOT_UPLOADED';
+        let idBadgeClass = 'status-not-uploaded';
+        let idBadgeText = 'No ID';
+        if (idStatus === 'APPROVED') { idBadgeClass = 'status-approved'; idBadgeText = 'Approved'; }
+        else if (idStatus === 'PENDING') { idBadgeClass = 'status-pending'; idBadgeText = 'Pending'; }
+        else if (idStatus === 'REJECTED') { idBadgeClass = 'status-rejected'; idBadgeText = 'Rejected'; }
+
+        let idCell = '';
+        if (order.id_card_url) {
+          idCell = `
+            <button type="button" class="btn-view-id" onclick="openIdCardModal('${order.username}', '${order.id_card_url}', '${order.id_card_filename || 'ID Card'}', '${idStatus}', '${encodeURIComponent(order.id_card_rejection_reason || '')}', '${order.id_card_uploaded_at || ''}')">
+              📄 View ID <span class="id-badge-inline ${idBadgeClass}">${idBadgeText}</span>
+            </button>
+          `;
+        } else {
+          idCell = `<span class="id-status-badge status-not-uploaded" style="font-size:0.75rem;">⚠️ No ID</span>`;
+        }
+
         const row = document.createElement("tr");
         row.innerHTML = `
           <td><strong>${order.order_token}</strong></td>
           <td>${order.username}</td>
+          <td>${idCell}</td>
           <td>${order.item_name}</td>
           <td>${order.quantity} pcs</td>
           <td>₹${parseFloat(order.total_amount).toFixed(2)}</td>
@@ -813,7 +1014,7 @@ async function fetchStoreOrders() {
         tbody.appendChild(row);
       });
     } else {
-      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;">No pending store orders.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;">No pending store orders.</td></tr>`;
     }
   } catch (err) {
     console.error("Staff store error:", err);
@@ -1013,4 +1214,264 @@ function switchStoreHistoryFilter(filter) {
   if (label) label.textContent = filter === "today" ? "Today" : "All History";
 
   fetchStoreHistory(filter);
+}
+
+// ----------------- IDENTITY CARD MODAL & STAFF VERIFICATION -----------------
+
+function openIdCardModal(username, fileUrl, filename, status, encodedReason, uploadDate) {
+  activeModalStudent = username;
+  const currentUser = JSON.parse(sessionStorage.getItem("smart_hostel_user"));
+  const isStaff = currentUser && (currentUser.role === "laundry_staff" || currentUser.role === "store_staff" || currentUser.role === "staff");
+
+  const titleEl = document.getElementById("id-modal-title");
+  const infoEl = document.getElementById("id-modal-student-info");
+  const statusBanner = document.getElementById("id-modal-status-banner");
+  const docContainer = document.getElementById("id-modal-doc-container");
+  const formatLabel = document.getElementById("id-modal-doc-format-label");
+  const downloadLink = document.getElementById("id-modal-download-link");
+  const staffControls = document.getElementById("id-modal-staff-controls");
+  const rejectInput = document.getElementById("id-modal-reject-reason");
+
+  const reason = decodeURIComponent(encodedReason || "");
+  const formattedDate = uploadDate ? new Date(uploadDate).toLocaleString() : "Recently uploaded";
+
+  if (titleEl) titleEl.textContent = `Identity Card - ${username}`;
+  if (infoEl) infoEl.textContent = `Student Roll/Username: ${username} | Uploaded: ${formattedDate}`;
+
+  // Status banner inside modal
+  if (statusBanner) {
+    statusBanner.className = "status-alert-box";
+    if (status === "APPROVED") {
+      statusBanner.classList.add("approved");
+      statusBanner.innerHTML = `<strong>✅ Status: APPROVED & VERIFIED</strong> - This student has a valid verified identity card.`;
+      statusBanner.classList.remove("hidden");
+    } else if (status === "REJECTED") {
+      statusBanner.classList.add("rejected");
+      statusBanner.innerHTML = `<strong>❌ Status: REJECTED</strong> - Reason: ${reason || "No valid identity card"}`;
+      statusBanner.classList.remove("hidden");
+    } else if (status === "PENDING") {
+      statusBanner.classList.add("pending");
+      statusBanner.innerHTML = `<strong>⏳ Status: PENDING STAFF VERIFICATION</strong> - Review the document below and approve or reject.`;
+      statusBanner.classList.remove("hidden");
+    } else {
+      statusBanner.classList.add("hidden");
+    }
+  }
+
+  // Render Document (PDF vs Image)
+  if (docContainer) {
+    docContainer.innerHTML = "";
+    const ext = (fileUrl || "").split('.').pop().toLowerCase();
+
+    if (ext === "pdf") {
+      if (formatLabel) formatLabel.textContent = `Document Format: PDF (${filename})`;
+      const iframe = document.createElement("iframe");
+      iframe.src = fileUrl;
+      iframe.className = "id-doc-preview-iframe";
+      iframe.title = "Student Identity Card PDF";
+      docContainer.appendChild(iframe);
+    } else {
+      if (formatLabel) formatLabel.textContent = `Document Format: Image (${filename})`;
+      const img = document.createElement("img");
+      img.src = fileUrl;
+      img.alt = `Identity Card - ${username}`;
+      img.className = "id-doc-preview-img";
+      docContainer.appendChild(img);
+    }
+  }
+
+  if (downloadLink) downloadLink.href = fileUrl;
+
+  // Staff Controls visibility
+  if (staffControls) {
+    if (isStaff) {
+      staffControls.classList.remove("hidden");
+      if (rejectInput) rejectInput.value = "No valid identity card";
+    } else {
+      staffControls.classList.add("hidden");
+    }
+  }
+
+  const modal = document.getElementById("id-card-view-modal");
+  if (modal) modal.classList.remove("hidden");
+}
+
+function closeIdCardModal() {
+  activeModalStudent = null;
+  const docContainer = document.getElementById("id-modal-doc-container");
+  if (docContainer) docContainer.innerHTML = "";
+  const modal = document.getElementById("id-card-view-modal");
+  if (modal) modal.classList.add("hidden");
+}
+
+function setIdCardRejectReason(reason) {
+  const input = document.getElementById("id-modal-reject-reason");
+  if (input) input.value = reason;
+}
+
+async function approveCurrentIdCard() {
+  if (!activeModalStudent) return;
+  const currentUser = JSON.parse(sessionStorage.getItem("smart_hostel_user"));
+
+  try {
+    const res = await fetch("/api/staff/id-card/approve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: activeModalStudent,
+        staffUsername: currentUser ? currentUser.username : "staff"
+      })
+    });
+    const data = await res.json();
+    alert(data.message);
+    closeIdCardModal();
+
+    // Refresh staff views
+    if (currentUser && (currentUser.role === "laundry_staff" || currentUser.role === "staff")) {
+      fetchLaundryRequests();
+    }
+    if (currentUser && (currentUser.role === "store_staff" || currentUser.role === "staff")) {
+      fetchStoreOrders();
+    }
+    fetchStudentIdCards();
+  } catch (err) {
+    console.error("Approve ID card error:", err);
+    alert("Failed to approve identity card");
+  }
+}
+
+async function rejectCurrentIdCard() {
+  if (!activeModalStudent) return;
+  const currentUser = JSON.parse(sessionStorage.getItem("smart_hostel_user"));
+  const reasonInput = document.getElementById("id-modal-reject-reason");
+  const reason = (reasonInput && reasonInput.value.trim()) ? reasonInput.value.trim() : "No valid identity card";
+
+  try {
+    const res = await fetch("/api/staff/id-card/reject", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: activeModalStudent,
+        staffUsername: currentUser ? currentUser.username : "staff",
+        reason: reason
+      })
+    });
+    const data = await res.json();
+    alert(data.message);
+    closeIdCardModal();
+
+    // Refresh staff views
+    if (currentUser && (currentUser.role === "laundry_staff" || currentUser.role === "staff")) {
+      fetchLaundryRequests();
+    }
+    if (currentUser && (currentUser.role === "store_staff" || currentUser.role === "staff")) {
+      fetchStoreOrders();
+    }
+    fetchStudentIdCards();
+  } catch (err) {
+    console.error("Reject ID card error:", err);
+    alert("Failed to reject identity card");
+  }
+}
+
+// ----------------- STAFF STUDENT IDENTITY CARDS DESK -----------------
+
+async function fetchStudentIdCards() {
+  try {
+    const res = await fetch("/api/staff/student-id-cards");
+    const data = await res.json();
+    if (!data.success) return;
+
+    allStudentIdCards = data.students || [];
+
+    // Calculate metrics
+    const total = allStudentIdCards.length;
+    let pending = 0, approved = 0, rejected = 0;
+    allStudentIdCards.forEach(s => {
+      if (s.id_card_status === "PENDING") pending++;
+      else if (s.id_card_status === "APPROVED") approved++;
+      else rejected++;
+    });
+
+    const mTotal = document.getElementById("id-metric-total");
+    const mPending = document.getElementById("id-metric-pending");
+    const mApproved = document.getElementById("id-metric-approved");
+    const mRejected = document.getElementById("id-metric-rejected");
+
+    if (mTotal) mTotal.textContent = total;
+    if (mPending) mPending.textContent = pending;
+    if (mApproved) mApproved.textContent = approved;
+    if (mRejected) mRejected.textContent = rejected;
+
+    renderStudentIdCardsTable();
+  } catch (err) {
+    console.error("Fetch student ID cards error:", err);
+  }
+}
+
+function switchIdCardFilter(filter) {
+  currentIdFilter = filter;
+  ["all", "pending", "approved", "rejected"].forEach(f => {
+    const btn = document.getElementById(`id-filter-${f}-btn`);
+    if (btn) btn.classList.toggle("active", f === filter);
+  });
+  renderStudentIdCardsTable();
+}
+
+function renderStudentIdCardsTable() {
+  const tbody = document.getElementById("staff-idcards-table-body");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+
+  const filtered = allStudentIdCards.filter(s => {
+    if (currentIdFilter === "all") return true;
+    if (currentIdFilter === "pending") return s.id_card_status === "PENDING";
+    if (currentIdFilter === "approved") return s.id_card_status === "APPROVED";
+    if (currentIdFilter === "rejected") return s.id_card_status === "REJECTED" || s.id_card_status === "NOT_UPLOADED";
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;">No students matching filter (${currentIdFilter}).</td></tr>`;
+    return;
+  }
+
+  filtered.forEach(s => {
+    const row = document.createElement("tr");
+    const status = s.id_card_status || "NOT_UPLOADED";
+    let statusClass = "status-not-uploaded";
+    let statusText = "Not Uploaded";
+
+    if (status === "APPROVED") { statusClass = "status-approved"; statusText = "Approved"; }
+    else if (status === "PENDING") { statusClass = "status-pending"; statusText = "Pending Review"; }
+    else if (status === "REJECTED") { statusClass = "status-rejected"; statusText = "Rejected"; }
+
+    const uploadDate = s.id_card_uploaded_at ? new Date(s.id_card_uploaded_at).toLocaleString() : "-";
+    const verifiedBy = s.id_card_verified_by ? s.id_card_verified_by : "-";
+    const remarks = s.id_card_rejection_reason ? `<span style="color:#b91c1c;">${s.id_card_rejection_reason}</span>` : (status === "APPROVED" ? "<span style='color:#166534;'>Valid ID Card</span>" : "-");
+
+    let docCell = s.id_card_filename || "No document";
+    let actionBtn = "";
+
+    if (s.id_card_url) {
+      actionBtn = `
+        <button type="button" class="btn-view-id" onclick="openIdCardModal('${s.username}', '${s.id_card_url}', '${s.id_card_filename || 'Identity Card'}', '${status}', '${encodeURIComponent(s.id_card_rejection_reason || '')}', '${s.id_card_uploaded_at || ''}')">
+          👁️ Review & Verify
+        </button>
+      `;
+    } else {
+      actionBtn = `<span style="color:#94a3b8; font-size:0.82rem;">Awaiting Upload</span>`;
+    }
+
+    row.innerHTML = `
+      <td><strong>${s.username}</strong></td>
+      <td>${docCell}</td>
+      <td>${uploadDate}</td>
+      <td><span class="id-status-badge ${statusClass}">${statusText}</span></td>
+      <td>${verifiedBy}</td>
+      <td>${remarks}</td>
+      <td>${actionBtn}</td>
+    `;
+    tbody.appendChild(row);
+  });
 }
